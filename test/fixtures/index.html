@@ -1,0 +1,48 @@
+<!-- Deliberately inaccessible fixture. Every violation here is intentional.
+     Do not "fix" this file — the tests assert these exact failures. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test Store</title>
+<style>
+  body { font-family: sans-serif; margin: 2rem; }
+  /* #a0a0a0 on #ffffff is about 2.5:1 — fails 4.5:1 */
+  .tagline { color: #a0a0a0; background: #ffffff; }
+  .icon-btn { border: 0; background: none; }
+</style>
+</head>
+<body>
+  <!-- No lang on <html>: html-has-lang -->
+  <!-- No <main>: region / landmark-one-main -->
+  <!-- No <h1>: page-has-heading-one -->
+
+  <div class="header">
+    <!-- image-alt: no alt attribute -->
+    <img src="/logo.png" width="80" height="40">
+
+    <!-- button-name: icon button with no accessible name -->
+    <button class="icon-btn">
+      <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"></circle></svg>
+    </button>
+
+    <!-- link-name: icon link with no accessible name -->
+    <a href="/cart.html">
+      <svg width="20" height="20" viewBox="0 0 20 20"><rect width="16" height="16" x="2" y="2"></rect></svg>
+    </a>
+  </div>
+
+  <h2>Welcome to the Test Store</h2>
+
+  <!-- color-contrast: grey on white -->
+  <p class="tagline">Hand-made goods, shipped worldwide.</p>
+
+  <ul>
+    <li><a href="/products/blue-scarf.html">Blue wool scarf</a></li>
+    <li><a href="/cart.html">Cart</a></li>
+    <li><a href="/contact.html">Contact us</a></li>
+  </ul>
+
+  <!-- image-alt again: a second failing element for the same rule -->
+  <img src="/banner.jpg" width="600" height="200">
+</body>
+</html>

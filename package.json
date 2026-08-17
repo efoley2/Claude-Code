@@ -1,0 +1,32 @@
+{
+  "name": "curbcut",
+  "version": "0.1.0",
+  "description": "Honest web accessibility scanning that ranks findings by real litigation risk.",
+  "type": "module",
+  "bin": {
+    "curbcut": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "scan": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "axe-core": "^4.10.3",
+    "commander": "^14.0.2",
+    "playwright": "^1.56.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
