@@ -72,8 +72,6 @@ const CRITICAL: Record<string, string> = {
 const HIGH: Record<string, string> = {
   'color-contrast':
     'Insufficient contrast is one of the most commonly cited barriers and the easiest for a tester to document with a screenshot.',
-  'color-contrast-enhanced':
-    'Fails the stricter AAA contrast threshold. Rarely pleaded on its own, but relevant where a higher standard has been asserted publicly.',
   'aria-hidden-focus':
     'Focusable content hidden from assistive technology creates a keyboard trap for screen reader users — a keyboard navigation barrier.',
   'aria-hidden-body':
@@ -95,6 +93,8 @@ const HIGH: Record<string, string> = {
   'aria-allowed-attr': 'ARIA attributes not permitted on their role are dropped, losing state information such as expanded or selected.',
   'aria-allowed-role': 'A role not permitted on an element produces inconsistent announcements across screen readers.',
   'aria-command-name': 'Unlabelled ARIA buttons and links are announced with no purpose, the same failure as an empty button.',
+  'aria-tab-name':
+    'An unlabelled tab gives no indication of which panel it opens. Tab widgets sit with menus and modals among the custom components testers probe for screen-reader and keyboard failures.',
   'aria-tooltip-name': 'An unlabelled tooltip conveys no information to assistive technology.',
   'aria-progressbar-name': 'Unlabelled progress indicators leave the user unaware of checkout or upload state.',
   'aria-meter-name': 'Unlabelled meters convey no value to assistive technology.',
@@ -109,7 +109,6 @@ const HIGH: Record<string, string> = {
   'audio-caption': 'Audio content without a text alternative is inaccessible to deaf and hard-of-hearing users.',
   'server-side-image-map': 'Server-side image maps cannot be operated by keyboard at all.',
   'meta-refresh': 'Automatic page refreshes interrupt screen reader users mid-sentence and can make a page impossible to read.',
-  'meta-refresh-no-exceptions': 'Timed refreshes that cannot be disabled block users who need more time.',
   blink: 'Blinking content can trigger seizures and is prohibited outright by WCAG.',
   marquee: 'Moving content that cannot be paused is both a cognitive barrier and a screen-reader problem.',
   'th-has-data-cells': 'Broken table header relationships make data tables unreadable in screen reader table navigation mode.',
@@ -123,7 +122,6 @@ const HIGH: Record<string, string> = {
  */
 const MODERATE: Record<string, string> = {
   'document-title': 'A missing page title leaves screen reader users unable to distinguish tabs or orient after navigation.',
-  'duplicate-id-active': 'Duplicate IDs on interactive elements break label associations, sometimes silently.',
   'duplicate-id-aria': 'Duplicate IDs referenced by ARIA cause the wrong element to be announced as the label.',
   'heading-order': 'Skipped heading levels disrupt the outline screen reader users navigate by.',
   'empty-heading': 'Empty headings add meaningless stops to heading navigation.',
@@ -140,6 +138,8 @@ const MODERATE: Record<string, string> = {
   'meta-viewport': 'Blocking zoom prevents low-vision users from enlarging text. Increasingly noted by testers on mobile.',
   'meta-viewport-large': 'Restrictive zoom limits hinder low-vision users.',
   'label-title-only': 'A title attribute alone is an unreliable label — it is not announced consistently and never appears on touch.',
+  'label-content-name-mismatch':
+    'When the accessible name omits the visible label, speech-input users cannot activate the control by saying what they see. Seldom pleaded by name, but it breaks a documented input method.',
   'avoid-inline-spacing': 'Inline spacing set with !important cannot be overridden by user stylesheets.',
   'p-as-heading': 'Paragraphs styled to look like headings are invisible to heading navigation.',
   tabindex: 'Positive tabindex values create a focus order that diverges from the visual order, confusing keyboard users.',
@@ -151,6 +151,8 @@ const MODERATE: Record<string, string> = {
   'aria-text': 'Misapplied role=text can hide nested interactive content.',
   'summary-name': 'An unlabelled disclosure summary gives no indication of what it expands.',
   'frame-focusable-content': 'Focusable content in a frame excluded from assistive technology becomes a keyboard trap.',
+  'frame-title-unique':
+    'Frames sharing one title cannot be told apart, so a user navigating by frame cannot reach the right embedded widget.',
 };
 
 /**
@@ -159,19 +161,20 @@ const MODERATE: Record<string, string> = {
  * crowd out the barriers that matter.
  */
 const LOW: Record<string, string> = {
-  'duplicate-id': 'Duplicate IDs on non-interactive elements are a code-hygiene issue with limited direct user impact.',
   'image-redundant-alt': 'Alt text duplicating adjacent visible text causes the same phrase to be announced twice.',
-  'identical-links-same-purpose': 'Links with identical text pointing to different destinations are ambiguous out of context.',
   'presentation-role-conflict': 'Conflicting presentation roles produce inconsistent announcements across screen readers.',
   'empty-table-header': 'Empty header cells give no context for their column or row.',
+  'table-duplicate-name': 'A caption repeating the table summary is announced twice, adding noise to table navigation.',
   'frame-tested': 'A frame could not be tested, so its contents are unknown rather than known-good.',
+  'hidden-content':
+    'Hidden content that could not be evaluated automatically. Flagged so a human can check it, not reported as a confirmed barrier.',
   'css-orientation-lock': 'Locking orientation blocks users with fixed-mounted devices.',
-  'target-size': 'Small touch targets are difficult for users with motor impairments. A newer criterion, not yet common in pleadings.',
   'link-in-text-block': 'Links distinguished only by colour are hard to identify for colour-blind users.',
   'skip-link': 'A skip link pointing at a missing target does not work.',
   'aria-treeitem-name': 'Unlabelled tree items are announced without purpose.',
   'aria-braille-equivalent': 'Braille attributes without a text equivalent are inconsistently supported.',
   'aria-deprecated-role': 'Deprecated roles may lose support in future assistive technology releases.',
+  'aria-roledescription': 'A role description applied to an element with no semantic role is ignored, so it never reaches the user.',
   'aria-conditional-attr': 'Conditionally invalid ARIA attributes may be ignored.',
   'aria-prohibited-attr': 'Prohibited ARIA attributes are ignored, so the intended name is never announced.',
   'landmark-complementary-is-top-level': 'Nested complementary landmarks are harder to locate.',
@@ -220,6 +223,18 @@ export function riskForRule(ruleId: string, axeImpact: string): RuleRisk {
 /** True when we have an explicit mapping, as opposed to an impact-based guess. */
 export function isMappedRule(ruleId: string): boolean {
   return ruleId in RULE_RISK;
+}
+
+/**
+ * Every rule we have tiered.
+ *
+ * Exported so the tests can check the tables against axe's real rule catalogue.
+ * A mapping for a rule id axe does not ship, or one axe will never select under
+ * the scanner's tags, is invisible: it never fires and nothing complains, so the
+ * barrier it was meant to rank silently falls through to the impact-based guess.
+ */
+export function mappedRuleIds(): string[] {
+  return Object.keys(RULE_RISK);
 }
 
 /** Base points for one instance of a barrier at each tier. */
