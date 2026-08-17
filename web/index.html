@@ -1,0 +1,1114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Curbcut — accessibility scanning for small online stores, ranked by what gets cited</title>
+<meta name="description" content="Curbcut scans a Shopify or WooCommerce store and ranks accessibility barriers by how often each one is named in ADA website complaints, with platform-specific fixes. $299 one-off. It does not certify compliance and does not claim to.">
+<style>
+  /* ---------------------------------------------------------------
+     Palette. Cool paper + deep teal, deliberately unlike the warm
+     olive-and-blue used by the report generator: this is a different
+     surface with a different job.
+     Light values live on bare :root so nothing is defined only inside
+     a media query.
+  ---------------------------------------------------------------- */
+  :root {
+    color-scheme: light;
+    --bg: #fcfcfd;
+    --surface: #f1f3f7;
+    --surface-2: #e4e9f0;
+    --text: #131820;
+    --muted: #4b5563;
+    --border: #c9d2dd;
+    --border-soft: #dde3ea;
+    --field-border: #78838f;
+    --accent: #0a5560;
+    --accent-hover: #073f47;
+    --on-accent: #ffffff;
+    --focus: #7a2ba8;
+    --flag: #8a2a17;
+    --flag-bg: #fdf2ef;
+    --flag-border: #e2b6a9;
+    --ok: #17563a;
+    --ok-bg: #eef6f1;
+    --ok-border: #b9d7c6;
+    --rule: #6b3a08;
+    --shadow: 0 1px 2px rgba(19, 24, 32, .06), 0 8px 24px -16px rgba(19, 24, 32, .28);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0e1319;
+      --surface: #171e26;
+      --surface-2: #212b36;
+      --text: #e9eff6;
+      --muted: #a3b1c0;
+      --border: #33404e;
+      --border-soft: #262f3a;
+      --field-border: #6b7886;
+      --accent: #63d3da;
+      --accent-hover: #8fe4e9;
+      --on-accent: #05222a;
+      --focus: #d3a6f5;
+      --flag: #f3ab94;
+      --flag-bg: #2a1712;
+      --flag-border: #572f22;
+      --ok: #7ddaa8;
+      --ok-bg: #10231a;
+      --ok-border: #264835;
+      --rule: #e3b980;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0e1319;
+    --surface: #171e26;
+    --surface-2: #212b36;
+    --text: #e9eff6;
+    --muted: #a3b1c0;
+    --border: #33404e;
+    --border-soft: #262f3a;
+    --field-border: #6b7886;
+    --accent: #63d3da;
+    --accent-hover: #8fe4e9;
+    --on-accent: #05222a;
+    --focus: #d3a6f5;
+    --flag: #f3ab94;
+    --flag-bg: #2a1712;
+    --flag-border: #572f22;
+    --ok: #7ddaa8;
+    --ok-bg: #10231a;
+    --ok-border: #264835;
+    --rule: #e3b980;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* In-page nav links glide rather than jump. Turned off wholesale by the
+       prefers-reduced-motion block at the end of this stylesheet. */
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    overflow-wrap: break-word;
+  }
+
+  h1, h2, h3, .num, .brand-mark {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  h1 { font-size: clamp(1.85rem, 1.2rem + 3.1vw, 3rem); line-height: 1.15; margin: 0 0 1rem; }
+  h2 { font-size: clamp(1.4rem, 1.15rem + 1.2vw, 1.95rem); line-height: 1.2; margin: 0 0 .75rem; }
+  h3 { font-size: clamp(1.08rem, 1rem + .4vw, 1.25rem); line-height: 1.3; margin: 0 0 .4rem; }
+  p { margin: 0 0 1rem; }
+  p:last-child, ul:last-child, ol:last-child { margin-bottom: 0; }
+
+  a {
+    color: var(--accent);
+    text-underline-offset: .18em;
+    text-decoration-thickness: .07em;
+    transition: color .15s ease;
+  }
+  a:hover { color: var(--accent-hover); }
+
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .wrap {
+    width: 100%;
+    max-width: 60rem;
+    margin: 0 auto;
+    padding-inline: clamp(1rem, 4vw, 2.5rem);
+  }
+  .narrow { max-width: 44rem; }
+
+  .skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    background: var(--accent);
+    color: var(--on-accent);
+    padding: .7rem 1.1rem;
+    z-index: 20;
+    font-weight: 600;
+    text-decoration: underline;
+  }
+  .skip:focus {
+    left: .5rem;
+    top: .5rem;
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+
+  /* ---------------- header ---------------- */
+  .site-header {
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg);
+  }
+  .header-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.5rem;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-block: 1rem;
+  }
+  .brand { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
+  .brand-mark { font-size: 1.35rem; letter-spacing: -.02em; }
+  .brand-note { color: var(--muted); font-size: .85rem; }
+  .site-nav ul {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem 1.15rem;
+    margin: 0;
+    padding: 0;
+    font-size: .95rem;
+  }
+
+  /* ---------------- hero ---------------- */
+  .hero { padding-block: clamp(2.5rem, 7vw, 4.5rem) clamp(1.5rem, 4vw, 2.5rem); }
+  .kicker {
+    font-size: .82rem;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 1rem;
+    font-weight: 600;
+  }
+  .lede { font-size: clamp(1.08rem, 1rem + .5vw, 1.3rem); color: var(--text); max-width: 40rem; }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem 1rem;
+    align-items: center;
+    margin-top: 1.75rem;
+  }
+
+  .btn {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--on-accent);
+    border: 2px solid var(--accent);
+    padding: .7rem 1.35rem;
+    font: inherit;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
+  .btn-secondary {
+    background: transparent;
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .btn-secondary:hover { background: var(--surface); color: var(--accent-hover); border-color: var(--accent-hover); }
+
+  /* ---------------- sections ---------------- */
+  section { padding-block: clamp(2.25rem, 5vw, 3.75rem); scroll-margin-top: 1rem; }
+  section + section { border-top: 1px solid var(--border-soft); }
+  .section-intro { max-width: 44rem; }
+
+  .callout {
+    background: var(--flag-bg);
+    border: 1px solid var(--flag-border);
+    border-left: 5px solid var(--flag);
+    border-radius: 6px;
+    padding: 1.1rem 1.25rem;
+    margin: 1.5rem 0 0;
+  }
+  .callout h2, .callout h3 { color: var(--flag); margin-bottom: .5rem; }
+
+  .note {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.15rem;
+    font-size: .95rem;
+    color: var(--muted);
+  }
+  .note strong { color: var(--text); }
+
+  /* ---------------- stats ---------------- */
+  .stats {
+    list-style: none;
+    margin: 1.75rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  }
+  .stats li {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 1.15rem 1.2rem;
+  }
+  .num {
+    display: block;
+    font-size: clamp(1.6rem, 1.3rem + 1.4vw, 2.15rem);
+    line-height: 1.1;
+    color: var(--accent);
+    margin-bottom: .35rem;
+  }
+  .stats p { font-size: .95rem; margin: 0; }
+  .src { display: block; margin-top: .5rem; font-size: .82rem; color: var(--muted); }
+
+  /* ---------------- lists ---------------- */
+  .plain { list-style: none; margin: 1.25rem 0 0; padding: 0; }
+  .plain > li {
+    padding: .85rem 0 .85rem 1.9rem;
+    border-top: 1px solid var(--border-soft);
+    position: relative;
+  }
+  .plain > li:first-child { border-top: 0; }
+  .plain > li::before {
+    content: "—";
+    position: absolute;
+    left: 0;
+    top: .85rem;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .plain.negative > li::before { content: "\00d7"; color: var(--flag); font-size: 1.15rem; line-height: 1.5; }
+
+  .cols {
+    display: grid;
+    gap: 1.5rem 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+    margin-top: 1.5rem;
+  }
+  .cols h3 { margin-bottom: .35rem; }
+  .cols p { font-size: .97rem; }
+
+  /* ---------------- sample report ---------------- */
+  .sample {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: clamp(1rem, 3vw, 1.6rem);
+    margin-top: 1.5rem;
+    box-shadow: var(--shadow);
+  }
+  .sample-tag {
+    display: inline-block;
+    font-size: .78rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--on-accent);
+    background: var(--accent);
+    padding: .25rem .6rem;
+    border-radius: 4px;
+  }
+  .score-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .5rem 1.25rem;
+    margin: 1rem 0 .25rem;
+  }
+  .score {
+    font-family: "Iowan Old Style", Palatino, Georgia, serif;
+    font-size: clamp(2.2rem, 1.6rem + 2.6vw, 3.2rem);
+    line-height: 1;
+    color: var(--flag);
+  }
+  .score-band { font-weight: 700; }
+  .finding {
+    background: var(--bg);
+    border: 1px solid var(--border-soft);
+    border-left: 5px solid var(--flag);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    margin-top: 1rem;
+  }
+  .badges {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem .6rem;
+    margin: .5rem 0 .85rem;
+    padding: 0;
+    font-size: .82rem;
+  }
+  .badges li {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: .1rem .6rem;
+    color: var(--muted);
+  }
+  .badges li.tier { border-color: var(--flag); color: var(--flag); font-weight: 700; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .9em; }
+  .finding ol { margin: .4rem 0 0; padding-left: 1.3rem; }
+  .finding ol li { margin-bottom: .35rem; }
+  .finding ol li:last-child { margin-bottom: 0; }
+  .fix-head { margin: 1rem 0 .2rem; font-weight: 700; }
+  .elide { color: var(--muted); font-size: .92rem; margin-top: 1rem; font-style: italic; }
+
+  /* ---------------- pricing ---------------- */
+  .tiers {
+    list-style: none;
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    margin: 1.75rem 0 0;
+    padding: 0;
+  }
+  .tier-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.35rem 1.3rem;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+  .tier-card.lead { border-width: 2px; border-color: var(--accent); background: var(--surface); }
+  .price {
+    font-family: "Iowan Old Style", Palatino, Georgia, serif;
+    font-size: 1.9rem;
+    line-height: 1.1;
+    display: block;
+    margin: .35rem 0 .1rem;
+  }
+  .price-note { color: var(--muted); font-size: .9rem; margin-bottom: .85rem; }
+  .tier-card ul { margin: 0 0 1rem; padding-left: 1.15rem; font-size: .96rem; }
+  .tier-card li { margin-bottom: .3rem; }
+  .tier-card .btn { margin-top: auto; text-align: center; }
+
+  /* ---------------- table ---------------- */
+  .table-scroll {
+    overflow-x: auto;
+    margin-top: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: .95rem; }
+  caption { text-align: left; padding: .85rem 1rem; color: var(--muted); font-size: .9rem; border-bottom: 1px solid var(--border); }
+  th, td { text-align: left; padding: .75rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  thead th { background: var(--surface-2); font-size: .85rem; letter-spacing: .04em; text-transform: uppercase; }
+  tbody th { font-weight: 700; }
+  tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+  tbody tr.mine { background: var(--ok-bg); }
+
+  /* ---------------- faq ---------------- */
+  .faq { margin-top: 1.5rem; }
+  .faq > div {
+    border-top: 1px solid var(--border-soft);
+    padding: 1.15rem 0;
+  }
+  .faq > div:first-child { border-top: 0; }
+  .faq h3 { margin-bottom: .35rem; }
+
+  /* ---------------- form ---------------- */
+  .form-grid {
+    display: grid;
+    gap: 1.1rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    margin-top: 1.5rem;
+  }
+  .field { display: flex; flex-direction: column; gap: .3rem; }
+  .field.wide { grid-column: 1 / -1; }
+  label { font-weight: 600; }
+  .hint { font-size: .88rem; color: var(--muted); }
+  input[type="url"], input[type="email"], select, textarea {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    /* 1px of --border would be a 1.5:1 boundary. Form controls need 3:1
+       against their background under WCAG 1.4.11, so they get their own token. */
+    border: 1px solid var(--field-border);
+    border-radius: 6px;
+    padding: .6rem .7rem;
+    width: 100%;
+    max-width: 100%;
+  }
+  textarea { min-height: 6.5rem; resize: vertical; }
+  ::placeholder { color: var(--muted); opacity: 1; }
+  .check { display: flex; gap: .6rem; align-items: flex-start; grid-column: 1 / -1; }
+  .check input { margin-top: .35rem; width: 1.1rem; height: 1.1rem; flex: none; accent-color: var(--accent); }
+  .check label { font-weight: 400; }
+  .req { color: var(--flag); font-weight: 700; }
+
+  /* ---------------- placeholders the owner must replace ---------------- */
+  .placeholder {
+    border: 2px dashed var(--flag);
+    background: var(--flag-bg);
+    border-radius: 8px;
+    padding: 1rem 1.15rem;
+    margin-top: 1.5rem;
+    font-size: .95rem;
+  }
+  .placeholder p { color: var(--text); }
+  .placeholder-label {
+    display: inline-block;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--flag);
+    margin-bottom: .4rem;
+  }
+
+  /* ---------------- footer ---------------- */
+  .site-footer {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding-block: 2.5rem 3.5rem;
+    font-size: .93rem;
+    color: var(--muted);
+  }
+  .site-footer h2 { font-size: 1.05rem; color: var(--text); }
+  .site-footer strong { color: var(--text); }
+  .site-footer ul { padding-left: 1.15rem; }
+  .site-footer li { margin-bottom: .35rem; }
+  .legal { border-top: 1px solid var(--border); margin-top: 1.75rem; padding-top: 1.25rem; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <p class="brand">
+      <span class="brand-mark">Curbcut</span>
+      <span class="brand-note">Accessibility scanning for small online stores</span>
+    </p>
+    <nav class="site-nav" aria-label="Sections of this page">
+      <ul>
+        <li><a href="#limits">What it does not do</a></li>
+        <li><a href="#sample">Sample report</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#request">Request a scan</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ============ HERO ============ -->
+  <div class="hero">
+    <div class="wrap">
+      <p class="kicker">For Shopify and WooCommerce store owners in the US</p>
+      <h1>Most store owners find out about web accessibility from a letter.</h1>
+      <p class="lede">
+        Curbcut scans your store and ranks what it finds by how often each barrier is actually named
+        in ADA website complaints — not by generic severity — then tells you how to fix each one on
+        your platform. $299, one-off, no subscription required.
+      </p>
+
+      <div class="callout">
+        <h2>Read this before you read anything else</h2>
+        <p>
+          <strong>No automated tool can tell you whether your website meets the standard. This one
+          cannot either, and does not claim to.</strong>
+          Automated testing detects roughly 30&ndash;60% of WCAG issues; the rest needs a human being with
+          a screen reader. Curbcut does not certify compliance, does not issue a badge, and will never
+          tell you that you are covered.
+        </p>
+        <p>
+          In January 2025 the Federal Trade Commission fined the accessibility-widget vendor accessiBe
+          $1 million over claims that its AI product made websites compliant. That is the claim this
+          product is built to avoid making.
+        </p>
+      </div>
+
+      <div class="hero-actions">
+        <a class="btn" href="#request">Request a Barrier Report &mdash; $299</a>
+        <a class="btn btn-secondary" href="#sample">See a sample report first</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SITUATION ============ -->
+  <section id="situation" aria-labelledby="situation-h">
+    <div class="wrap">
+      <div class="section-intro">
+        <h2 id="situation-h">The market you are selling into</h2>
+        <p>
+          These are aggregate figures for the United States in calendar year 2025. They describe a market,
+          not your store.
+        </p>
+      </div>
+
+      <ul class="stats">
+        <li>
+          <span class="num">~5,000</span>
+          <p>Web accessibility lawsuits filed in the US in 2025, federal and state combined. Federal filings rose 27% year over year.</p>
+          <span class="src">Source: UsableNet ADA lawsuit tracker</span>
+        </li>
+        <li>
+          <span class="num">35,000&ndash;50,000</span>
+          <p>Estimated demand letters sent in 2025 — roughly ten times the lawsuit count. Most are settled privately and never become public.</p>
+          <span class="src">Source: EcomBack 2025 annual report</span>
+        </li>
+        <li>
+          <span class="num">69%</span>
+          <p>Share of first-half 2025 suits filed against online stores. Most defendants were businesses under $25M in annual revenue.</p>
+          <span class="src">Source: EcomBack 2025 annual report</span>
+        </li>
+        <li>
+          <span class="num">~$5,000</span>
+          <p>Typical amount sought in a demand letter. Reported settlements average in the region of $30,000, before legal fees.</p>
+          <span class="src">Sources: UsableNet, EcomBack</span>
+        </li>
+      </ul>
+
+      <div class="note" style="margin-top:1.5rem;">
+        <p>
+          <strong>What these numbers do not say.</strong> Nobody — not us, not a lawyer, not a scanner —
+          can tell you whether anyone will ever contact you about your website. Anyone who says otherwise
+          is guessing at you in order to sell something. What the figures do say is that this stopped being
+          an enterprise-only problem, and that the businesses on the receiving end look a lot like a
+          $2M-a-year Shopify store with no in-house developer.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OVERLAYS ============ -->
+  <section id="overlays" aria-labelledby="overlays-h">
+    <div class="wrap">
+      <div class="section-intro">
+        <h2 id="overlays-h">If you already installed an accessibility widget</h2>
+        <p>
+          You may have bought one after the last time this came up. Here is what has since become
+          public about that category.
+        </p>
+      </div>
+
+      <ul class="plain">
+        <li>
+          <strong>38.5% of businesses sued in 2025 already had an accessibility overlay installed.</strong>
+          Having one is not correlated with being left alone. In several filings the overlay itself
+          was described as an additional barrier.
+        </li>
+        <li>
+          <strong>The FTC fined accessiBe $1 million in January 2025</strong> over deceptive claims that
+          its AI-powered widget made customer websites compliant, and over undisclosed paid reviews.
+        </li>
+        <li>
+          <strong>Overlays do not work, and the reason is structural.</strong> A script that loads on top
+          of your theme cannot know what your product photo actually shows, cannot restructure a checkout
+          flow that makes no sense read aloud in order, and cannot repair a button your theme's JavaScript
+          renders unreachable by keyboard. It patches the surface at runtime. The code underneath is
+          unchanged, and the code underneath is what a tester documents.
+        </li>
+        <li>
+          <strong>Screen reader users largely turn them off.</strong> Hundreds of accessibility
+          practitioners, including many who use assistive technology daily, have signed a public statement
+          against overlay products.
+          <span class="src">Source: overlayfactsheet.com</span>
+        </li>
+      </ul>
+
+      <div class="note" style="margin-top:1.5rem;">
+        <p>
+          Curbcut does not sell an overlay, a widget, a script, a badge, or a seal. There is nothing to
+          install on your store. We run a scan from outside, on publicly reachable pages only, and hand
+          you a document.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WHAT IT DOES ============ -->
+  <section id="what" aria-labelledby="what-h">
+    <div class="wrap">
+      <div class="section-intro">
+        <h2 id="what-h">What Curbcut does</h2>
+        <p>
+          A free scanner will hand you 400 undifferentiated violations sorted by WCAG severity, which
+          buries the unlabelled size dropdown on your product page underneath fifty landmark warnings.
+          Curbcut re-sorts that list on three axes.
+        </p>
+      </div>
+
+      <div class="cols">
+        <div>
+          <h3>1. Ranked by what gets cited</h3>
+          <p>
+            About 150 automated rules are mapped to how frequently that specific barrier is named in
+            filed ADA website complaints. Missing alt text, unlabelled dropdowns and empty buttons come
+            first, because that is what complaints actually enumerate.
+          </p>
+        </div>
+        <div>
+          <h3>2. Weighted by where it sits</h3>
+          <p>
+            The same contrast failure scores twice as high on your checkout button as in your footer.
+            A barrier that blocks a purchase is a different thing from a barrier on your shipping-policy
+            page, and it is treated as one.
+          </p>
+        </div>
+        <div>
+          <h3>3. Fixes for your platform</h3>
+          <p>
+            &ldquo;Products &rarr; select product &rarr; click the image &rarr; set Alt text&rdquo; for
+            Shopify. &ldquo;Media Library &rarr; select image &rarr; fill in Alt text&rdquo; for
+            WooCommerce. Not a link to a W3C specification page.
+          </p>
+        </div>
+        <div>
+          <h3>4. Deduplicated, then dated</h3>
+          <p>
+            One rule failing on five pages is one template fix, shown once, scored at its worst location.
+            Every report is dated, which gives you a record of when you looked and what you did about it.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LIMITS ============ -->
+  <section id="limits" aria-labelledby="limits-h">
+    <div class="wrap">
+      <div class="section-intro">
+        <h2 id="limits-h">What this does not do</h2>
+        <p>
+          This section is the reason the product exists. Read it before you buy, not after.
+        </p>
+      </div>
+
+      <ul class="plain negative">
+        <li>
+          <strong>It does not certify compliance.</strong> No such certificate exists under the ADA —
+          not from us, not from any vendor, not from any auditor. Anyone selling you one is selling you
+          a document with no legal standing.
+        </li>
+        <li>
+          <strong>It does not find everything.</strong> Automated testing catches roughly 30&ndash;60% of
+          WCAG issues. Whether your alt text is <em>accurate</em>, whether your focus order makes
+          <em>sense</em>, whether your error messages are <em>understandable</em> — a machine cannot judge
+          any of that. A clean Curbcut report would not mean your site is accessible.
+        </li>
+        <li>
+          <strong>It does not fix anything on its own.</strong> The report tells you what is broken and
+          how to repair it. Someone still has to go and do it — you, your developer, or us under a
+          separate remediation engagement.
+        </li>
+        <li>
+          <strong>It does not replace testing with real people.</strong> The only way to know how your
+          store behaves for someone using a screen reader is to have someone using a screen reader go
+          through it. If that is what you need, we will tell you so and point you at people who do it.
+        </li>
+        <li>
+          <strong>It does not see anything behind a login.</strong> We scan publicly reachable pages only,
+          we respect robots.txt, and we never attempt an authenticated area. Your logged-in account pages
+          are not covered.
+        </li>
+        <li>
+          <strong>It does not protect you from anything.</strong> No software product does. What it does
+          is find and prioritise real barriers so that fixing them is tractable instead of overwhelming.
+        </li>
+        <li>
+          <strong>It is not legal advice.</strong> We are not lawyers. If you have received correspondence
+          about your website, talk to an attorney about that correspondence. We can tell you what is
+          technically broken and how to repair it; that is the whole of our competence.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ SAMPLE ============ -->
+  <section id="sample" aria-labelledby="sample-h">
+    <div class="wrap">
+      <div class="section-intro">
+        <h2 id="sample-h">What the report looks like</h2>
+        <p>
+          Below is an excerpt in the report's own format. The findings shown come from our internal
+          demo store, which has deliberately planted violations — they are not from a real customer
+          and not from anyone's live site.
+        </p>
+      </div>
+
+      <div class="sample">
+        <p><span class="sample-tag">Sample excerpt &mdash; demo store</span></p>
+
+        <h3>Accessibility findings &mdash; demo-store.example</h3>
+        <p class="hint">Shopify &middot; 6 pages scanned &middot; 3 March 2026</p>
+
+        <p class="score-row">
+          <span class="score">63</span>
+          <span><span class="score-band">Elevated</span> exposure, out of 100</span>
+        </p>
+        <p class="hint">
+          Several commonly cited barriers present. These are the ones to fix first. The score reflects
+          what automated testing found and how often those barriers appear in complaints; it is not a
+          grade, a rating, or a statement about your legal position.
+        </p>
+
+        <article class="finding" aria-labelledby="sample-f1">
+          <h4 id="sample-f1" style="margin:0;font-size:1.05rem;">1. Images must have alternate text</h4>
+          <ul class="badges">
+            <li class="tier">Most-cited barrier</li>
+            <li>WCAG 1.1.1</li>
+            <li>14 elements</li>
+            <li class="mono">image-alt</li>
+          </ul>
+          <p style="margin-bottom:.5rem;">
+            <strong>Why this matters:</strong> Missing alternative text is the single most frequently
+            cited barrier in ADA website complaints. A screen reader announces the filename or nothing
+            at all.
+          </p>
+          <p class="hint" style="margin-bottom:0;">
+            Found on 4 pages &mdash; worst instance: <span class="mono">/products/merino-crew</span> (product page)
+          </p>
+          <p class="fix-head">How to fix &mdash; Shopify &middot; minutes</p>
+          <ol>
+            <li>Products &rarr; select product &rarr; click the image &rarr; set &ldquo;Alt text&rdquo;. This flows through every template automatically.</li>
+            <li>For theme images (banners, logos, icons): Online Store &rarr; Themes &rarr; Edit code, then find the <code>&lt;img&gt;</code> tag and add an alt attribute.</li>
+            <li>Describe the image's purpose, not its appearance. For a product photo, the product name is usually right.</li>
+          </ol>
+        </article>
+
+        <article class="finding" aria-labelledby="sample-f2">
+          <h4 id="sample-f2" style="margin:0;font-size:1.05rem;">2. Select elements must have an accessible name</h4>
+          <ul class="badges">
+            <li class="tier">Most-cited barrier</li>
+            <li>WCAG 4.1.2</li>
+            <li>3 elements</li>
+            <li class="mono">select-name</li>
+          </ul>
+          <p style="margin-bottom:.5rem;">
+            <strong>Why this matters:</strong> Unlabelled dropdown menus are specifically and repeatedly
+            named in ADA web complaints — size and quantity selectors are the classic example.
+          </p>
+          <p class="hint" style="margin-bottom:0;">
+            Found on 2 pages &mdash; worst instance: <span class="mono">/cart</span> (cart)
+          </p>
+          <p class="fix-head">How to fix &mdash; Shopify &middot; minutes</p>
+          <ol>
+            <li>Give every <code>&lt;select&gt;</code> a visible <code>&lt;label for="…"&gt;</code> pointing at its <code>id</code>.</li>
+            <li>Where the design has no room for a visible label, use <code>aria-label</code> — but a visible one is better for everybody.</li>
+          </ol>
+        </article>
+
+        <p class="elide">&hellip; 11 further findings, each with the same treatment, ranked and deduplicated.</p>
+
+        <div class="note" style="margin-top:1.25rem;">
+          <p style="margin:0;">
+            <strong>Printed above the findings in every report:</strong> this scan does not certify
+            compliance. It ran 71 automated rules and flagged 13. It cannot check whether alt text is
+            accurate, whether the reading order makes sense, or whether the site is usable with a screen
+            reader end to end.
+          </p>
+        </div>
+      </div>
+
+      <div class="placeholder">
+        <p class="placeholder-label">Placeholder &mdash; replace before publishing</p>
+        <p style="margin-bottom:0;">
+          A downloadable full sample report (PDF or HTML) belongs here. Generate one with
+          <span class="mono">npx tsx scripts/demo-report.mts sample-report.html</span>, host it, and link
+          it from this block. Do not publish a scan of any real store without that store's written
+          permission.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PRICING ============ -->
+  <section id="pricing" aria-labelledby="pricing-h">
+    <div class="wrap">
+      <div class="section-intro">
+        <h2 id="pricing-h">Pricing</h2>
+        <p>Three things you can buy. No trials that auto-convert, no annual lock-in on the entry offer.</p>
+      </div>
+
+      <ul class="tiers">
+        <li class="tier-card lead">
+          <h3>Barrier Report</h3>
+          <span class="price">$299</span>
+          <p class="price-note">one-off, per store</p>
+          <ul>
+            <li>Scan of up to 10 pages, including your product, cart and checkout paths</li>
+            <li>Findings ranked by how often each barrier is named in complaints</li>
+            <li>Platform-specific fix instructions for each one</li>
+            <li>A 30-minute call to walk through it</li>
+            <li>A dated document you keep</li>
+          </ul>
+          <a class="btn" href="#request">Request a Barrier Report</a>
+        </li>
+
+        <li class="tier-card">
+          <h3>Monitoring</h3>
+          <span class="price">$79<span style="font-size:1rem;">/mo</span></span>
+          <p class="price-note">or $790/year &middot; cancel any time</p>
+          <ul>
+            <li>Monthly re-scan of the same pages</li>
+            <li>An alert when a new barrier appears — theme and app updates reintroduce them constantly</li>
+            <li>An accumulating dated record of what you found and when</li>
+          </ul>
+          <a class="btn btn-secondary" href="#request">Ask about monitoring</a>
+        </li>
+
+        <li class="tier-card">
+          <h3>Remediation</h3>
+          <span class="price">$1,200&ndash;2,500</span>
+          <p class="price-note">fixed scope, quoted up front</p>
+          <ul>
+            <li>We do the work on your Shopify or WooCommerce theme</li>
+            <li>Scope is the critical and high-tier findings from your report, named explicitly before you agree</li>
+            <li>Fixed price, never hourly, quoted after the scan so both sides know the size of the job</li>
+          </ul>
+          <a class="btn btn-secondary" href="#request">Ask for a quote</a>
+        </li>
+      </ul>
+
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Comparison of accessibility options, scrollable">
+        <table>
+          <caption>How the options compare for a store of this size</caption>
+          <thead>
+            <tr>
+              <th scope="col">Option</th>
+              <th scope="col">Price</th>
+              <th scope="col">What you get</th>
+              <th scope="col">The catch</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Free scanners<br><span class="hint">axe DevTools, WAVE, Lighthouse</span></th>
+              <td>$0</td>
+              <td>A complete list of automated violations</td>
+              <td>Undifferentiated. Sorted by generic severity, so the barrier that blocks checkout sits below fifty warnings nobody has ever been sued over. No fixes for your platform, no record.</td>
+            </tr>
+            <tr>
+              <th scope="row">Overlay widget</th>
+              <td>~$490/yr</td>
+              <td>A script and an accessibility badge</td>
+              <td>The FTC fined the largest vendor $1M in 2025 over its compliance claims. 38.5% of businesses sued that year already had an overlay installed. Does not change the underlying code.</td>
+            </tr>
+            <tr>
+              <th scope="row">Manual audit by a specialist</th>
+              <td>$1,500&ndash;5,000</td>
+              <td>Human testing with assistive technology — genuinely the most thorough option</td>
+              <td>Correctly priced for what it is, and out of reach for most stores under $15M. If you can afford it, buy it: it sees things no scanner can.</td>
+            </tr>
+            <tr class="mine">
+              <th scope="row">Curbcut Barrier Report</th>
+              <td>$299</td>
+              <td>Automated findings, ranked by litigation frequency and purchase-path position, with platform-specific fixes and a call</td>
+              <td>Still automated, so still 30&ndash;60% coverage. Does not certify anything. Not a substitute for manual testing if you can afford manual testing.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section id="faq" aria-labelledby="faq-h">
+    <div class="wrap narrow">
+      <h2 id="faq-h">Straight answers</h2>
+
+      <div class="faq">
+        <div>
+          <h3>Will this stop me getting a demand letter?</h3>
+          <p>
+            No, and be suspicious of anyone who says their product will. What fixing real barriers does
+            is make your store usable by more people and give you a dated record of the work. Those are
+            the honest benefits. Everything beyond that is a question for a lawyer.
+          </p>
+        </div>
+        <div>
+          <h3>Am I legally required to do any of this?</h3>
+          <p>
+            That is a legal question about your specific business and we are not qualified to answer it.
+            Ask an attorney. We can tell you what a scanner finds and how to fix it.
+          </p>
+        </div>
+        <div>
+          <h3>I already have a widget. Should I remove it?</h3>
+          <p>
+            We are not going to tell you to rip something out sight unseen. What we will do is scan the
+            site with it installed and show you what remains broken underneath, which is usually the more
+            useful thing to know first.
+          </p>
+        </div>
+        <div>
+          <h3>How is this different from running Lighthouse myself?</h3>
+          <p>
+            It is the same underlying engine — axe-core, which is free and open source, and we say so
+            plainly. The difference is entirely in the ranking, the purchase-path weighting, and the fix
+            instructions written for your platform. If you are technical enough to read raw axe output and
+            prioritise it yourself, you genuinely do not need us.
+          </p>
+        </div>
+        <div>
+          <h3>What if the scan comes back clean?</h3>
+          <p>
+            Then you get a report that says automated testing found nothing, alongside a plain statement
+            that this does not mean the site is accessible, and we tell you the useful next step is manual
+            testing rather than another scan. We would rather say that than invent findings.
+          </p>
+        </div>
+        <div>
+          <h3>Do you scan sites without being asked?</h3>
+          <p>
+            We run scans on publicly reachable pages to prepare outreach, using a user agent that
+            identifies itself as Curbcut, respecting robots.txt, and never touching anything behind a
+            login. If you would rather we did not scan your site, say so and we will remove it
+            permanently.
+          </p>
+        </div>
+      </div>
+
+      <div class="placeholder">
+        <p class="placeholder-label">Placeholder &mdash; replace before publishing</p>
+        <p>
+          <strong>There are no testimonials on this page because there are no customers to quote yet.</strong>
+          When there are, real quotes with real names and real store URLs go in this block — with written
+          permission from each one. Do not put stock photos, invented names, star ratings, or
+          &ldquo;trusted by 500+ stores&rdquo; here. The entire pitch above is honesty; one fabricated quote
+          destroys it.
+        </p>
+        <p style="margin-bottom:0;">
+          Also replace: the business address and contact email in the footer, and the form endpoint below.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ REQUEST ============ -->
+  <section id="request" aria-labelledby="request-h">
+    <div class="wrap narrow">
+      <h2 id="request-h">Request a scan</h2>
+      <p>
+        Tell us the store and we will run the scan and send you the report. If the scan comes back with
+        nothing worth $299 of your money, we will say so and not invoice you.
+      </p>
+
+      <!-- PLACEHOLDER: point `action` at your own form handler before publishing.
+           This page ships with no JavaScript and makes no third-party requests. -->
+      <form action="/request-a-scan" method="post">
+        <div class="form-grid">
+          <div class="field wide">
+            <label for="store">Your store's web address <span class="req" aria-hidden="true">*</span></label>
+            <input type="url" id="store" name="store" required autocomplete="url"
+                   placeholder="https://yourstore.com" aria-describedby="store-hint">
+            <span class="hint" id="store-hint">Required. The public homepage is enough — we find the rest.</span>
+          </div>
+
+          <div class="field">
+            <label for="email">Email <span class="req" aria-hidden="true">*</span></label>
+            <input type="email" id="email" name="email" required autocomplete="email"
+                   aria-describedby="email-hint">
+            <span class="hint" id="email-hint">Required. Used to send the report and nothing else.</span>
+          </div>
+
+          <div class="field">
+            <label for="platform">Platform</label>
+            <select id="platform" name="platform" aria-describedby="platform-hint">
+              <option value="">I'm not sure</option>
+              <option value="shopify">Shopify</option>
+              <option value="woocommerce">WooCommerce</option>
+              <option value="bigcommerce">BigCommerce</option>
+              <option value="squarespace">Squarespace</option>
+              <option value="wix">Wix</option>
+              <option value="webflow">Webflow</option>
+              <option value="other">Something else</option>
+            </select>
+            <span class="hint" id="platform-hint">Optional. The scan detects this anyway.</span>
+          </div>
+
+          <div class="field wide">
+            <label for="context">Anything we should know?</label>
+            <textarea id="context" name="context" aria-describedby="context-hint"></textarea>
+            <span class="hint" id="context-hint">
+              Optional. Pages that matter most, an overlay you already installed, a deadline you are
+              working to. Please do not send us details of any legal correspondence — we are not lawyers
+              and cannot advise on it.
+            </span>
+          </div>
+
+          <div class="check">
+            <input type="checkbox" id="monitoring" name="monitoring" value="yes">
+            <label for="monitoring">I would also like to hear about monthly monitoring at $79/mo.</label>
+          </div>
+        </div>
+
+        <p style="margin-top:1.5rem;">
+          <button class="btn" type="submit">Send request</button>
+        </p>
+      </form>
+
+      <div class="note" style="margin-top:1.5rem;">
+        <p style="margin:0;">
+          Prefer email? Write to
+          <a href="mailto:hello@example.com">hello@example.com</a>
+          <span class="hint">(placeholder address — replace with your real one)</span>
+          with your store URL. There is no account to create and no card to enter to get a quote.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <h2>Sources</h2>
+    <p>Every figure on this page comes from one of the following. Curbcut is not affiliated with, endorsed by, or connected to any of these organisations; they are cited as sources only.</p>
+    <ul>
+      <li><a href="https://info.usablenet.com/ada-website-compliance-lawsuit-tracker" rel="noopener noreferrer">UsableNet — ADA website lawsuit tracker</a> (filing volumes, year-over-year change)</li>
+      <li><a href="https://www.ecomback.com/annual-2025-ada-website-accessibility-lawsuit-report" rel="noopener noreferrer">EcomBack — 2025 ADA website accessibility lawsuit report</a> (demand-letter estimates, defendant profile, overlay share)</li>
+      <li>US Federal Trade Commission — enforcement action against accessiBe, January 2025 ($1M monetary judgment; deceptive claims and undisclosed endorsements). See the FTC's own press release for the primary record.</li>
+      <li><a href="https://overlayfactsheet.com/" rel="noopener noreferrer">Overlay Fact Sheet</a> (practitioner position on overlay products)</li>
+      <li><a href="https://www.deque.com/axe/axe-core/" rel="noopener noreferrer">Deque — axe-core</a> (automated coverage of roughly 30&ndash;60% of WCAG issues)</li>
+      <li><a href="https://accessible.org/pricing/" rel="noopener noreferrer">Accessible.org — audit pricing</a> (manual audit price range)</li>
+    </ul>
+
+    <div class="legal">
+      <p>
+        <strong>Curbcut is not a law firm and nothing here is legal advice.</strong>
+        We are not attorneys, we do not represent anyone, and we have no affiliation with the Department
+        of Justice, the Federal Trade Commission, any court, or any law firm. If you have received
+        correspondence concerning your website, consult a lawyer about it.
+      </p>
+      <p>
+        Curbcut is an automated scanning service. It does not certify compliance with the ADA, WCAG, or
+        any other standard, and no report it produces should be presented as evidence of compliance.
+        Automated testing detects roughly 30&ndash;60% of WCAG issues.
+      </p>
+      <p style="margin-bottom:0;">
+        <span class="mono">PLACEHOLDER</span> — Curbcut LLC, 000 Example Street, City, ST 00000, USA.
+        Replace with the registered business name and physical address before publishing; a real postal
+        address is required in commercial email under CAN-SPAM.
+      </p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

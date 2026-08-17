@@ -13,26 +13,64 @@ export async function detectPlatform(page: Page): Promise<Platform> {
   try {
     return await page.evaluate(() => {
       const w = window as unknown as Record<string, unknown>;
-      const html = document.documentElement.outerHTML;
 
-      if (w.Shopify || /cdn\.shopify\.com|shopifycloud|myshopify\.com/i.test(html)) return 'shopify';
+      /*
+       * Match against structural signals only — runtime globals, resource
+       * hosts, generator meta, body classes — never raw page source.
+       *
+       * Searching outerHTML for a vendor name misfires on any page that merely
+       * *mentions* one: a store comparing platforms in a blog post, or a
+       * competitor-comparison table, gets classified as that competitor. That
+       * is not cosmetic. Platform drives which remediation instructions the
+       * customer receives, so a false positive hands a Shopify merchant
+       * Webflow instructions that cannot work on their site.
+       */
+      const hosts = new Set<string>();
+      const paths: string[] = [];
+      for (const el of Array.from(document.querySelectorAll('script[src], link[href], img[src]'))) {
+        const raw = el.getAttribute('src') ?? el.getAttribute('href');
+        if (!raw) continue;
+        try {
+          const url = new URL(raw, document.baseURI);
+          hosts.add(url.hostname.toLowerCase());
+          paths.push(url.pathname.toLowerCase());
+        } catch {
+          // Malformed URL; nothing to learn from it.
+        }
+      }
+
+      const hostMatches = (re: RegExp) => [...hosts].some((h) => re.test(h));
+      const pathMatches = (re: RegExp) => paths.some((p) => re.test(p));
+      const generator = (
+        document.querySelector('meta[name="generator" i]')?.getAttribute('content') ?? ''
+      ).toLowerCase();
+
+      if (w.Shopify || hostMatches(/(^|\.)(cdn\.shopify\.com|shopifycloud\.com|myshopify\.com)$/)) return 'shopify';
+
       if (
-        document.body?.className.includes('woocommerce') ||
-        /wp-content\/plugins\/woocommerce|wc-ajax/i.test(html)
+        /\bwoocommerce\b/.test(document.body?.className ?? '') ||
+        pathMatches(/\/wp-content\/plugins\/woocommerce\//) ||
+        generator.includes('woocommerce')
       ) {
         return 'woocommerce';
       }
-      if (w.wixBiSession || /static\.parastorage\.com|wix\.com/i.test(html)) return 'wix';
+
+      if (w.wixBiSession || hostMatches(/(^|\.)parastorage\.com$/) || generator.includes('wix')) return 'wix';
+
       if (
         (w.Static as Record<string, unknown> | undefined)?.SQUARESPACE_CONTEXT ||
-        /static1\.squarespace\.com|squarespace\.com/i.test(html)
+        hostMatches(/(^|\.)(squarespace\.com|squarespace-cdn\.com)$/)
       ) {
         return 'squarespace';
       }
-      if (/cdn\d*\.bigcommerce\.com|bigcommerce\.com/i.test(html)) return 'bigcommerce';
-      if (document.documentElement.hasAttribute('data-wf-site') || /assets\.website-files\.com|webflow/i.test(html)) {
+
+      if (hostMatches(/(^|\.)bigcommerce\.com$/)) return 'bigcommerce';
+
+      // data-wf-site is Webflow's own marker and is not something body copy carries.
+      if (document.documentElement.hasAttribute('data-wf-site') || hostMatches(/(^|\.)website-files\.com$/)) {
         return 'webflow';
       }
+
       return 'unknown';
     });
   } catch {

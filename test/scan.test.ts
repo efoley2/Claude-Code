@@ -136,11 +136,16 @@ describe('report rendering', () => {
       ].join('|'),
       'gi',
     );
-    const NEGATED = /\b(?:not|never|n't|nor|without|rather than|same as|instead of|cannot|no\s+\w+\s+can)\b/i;
+    // "no <noun phrase> can" allows several words, so "No automated tool can
+    // tell you..." reads as the denial it is. A single-word gap missed that
+    // and flagged an honest sentence as a claim.
+    const NEGATED =
+      /\b(?:not|never|n't|nor|without|rather than|same as|instead of|cannot|neither|no\s+(?:\w+\s+){1,4}can)\b/i;
 
     const unnegated: string[] = [];
     for (const match of html.matchAll(CLAIM)) {
-      const start = Math.max(0, (match.index ?? 0) - 90);
+      // Wide enough to reach a negation at the start of the sentence.
+      const start = Math.max(0, (match.index ?? 0) - 140);
       if (!NEGATED.test(html.slice(start, match.index ?? 0))) {
         unnegated.push(html.slice(start, (match.index ?? 0) + match[0].length));
       }
@@ -182,5 +187,42 @@ describe('report rendering', () => {
     const summary = renderTerminalSummary(report);
     expect(summary).toMatch(/not a compliance certificate/i);
     expect(summary.length).toBeGreaterThan(50);
+  });
+});
+
+describe('the "what could not be checked" block', () => {
+  const base = {
+    site: 'https://shop.example',
+    scannedAt: new Date().toISOString(),
+    platform: 'shopify' as const,
+    pagesScanned: [
+      { url: 'https://shop.example', title: 'Shop', stage: 'home' as const, findings: [], warnings: [] },
+    ],
+    findings: [],
+    exposureScore: 0,
+    summary: { critical: 0, high: 0, moderate: 0, low: 0, totalInstances: 0 },
+    passedRuleCount: 40,
+    incompleteRuleCount: 0,
+  };
+
+  it('names every page that went unchecked', () => {
+    const html = renderHtmlReport({
+      ...base,
+      warnings: ['Not checked — robots.txt disallows /checkout.', 'Not checked — /cart timed out.'],
+    });
+    expect(html).toMatch(/What could not be checked/i);
+    expect(html).toMatch(/robots\.txt disallows \/checkout/);
+    expect(html).toMatch(/\/cart timed out/);
+  });
+
+  it('says plainly that skipped is not the same as clean', () => {
+    // The failure mode this guards: a report with zero findings because four
+    // pages were skipped reads identically to a genuinely clean site.
+    const html = renderHtmlReport({ ...base, warnings: ['Not checked — robots.txt disallows /checkout.'] });
+    expect(html).toMatch(/not a page that came back clean/i);
+  });
+
+  it('is omitted entirely when the whole scan completed', () => {
+    expect(renderHtmlReport({ ...base, warnings: [] })).not.toMatch(/What could not be checked/i);
   });
 });

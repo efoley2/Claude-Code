@@ -32,6 +32,20 @@ npm run scan -- yourstore.com --pages 10 --out report.html --json findings.json
 | `-p, --pages <n>` | `6` | Maximum pages to scan |
 | `-t, --timeout <ms>` | `30000` | Per-page navigation timeout |
 | `-q, --quiet` | off | Suppress progress output |
+| `--no-robots` | off | Ignore `robots.txt`. Only for a site you own. |
+| `--allow-private` | off | Permit loopback and private-network targets. Only for a site you own. |
+
+### Batch mode
+
+Scanning a prospect list is the go-to-market motion described in `business/PLAN.md` §5 — scan first, then lead the email with the prospect's own findings.
+
+```bash
+npx tsx src/cli.ts batch domains.txt --out ranked.csv --reports reports/
+```
+
+The input is one domain per line; blank lines and `#` comments are ignored. Output is a CSV ranked by exposure score, with a `status` column that is either `qualified` or `DO-NOT-CONTACT (<reason>)`. **A site that scans clean is marked do-not-contact** — emailing someone with nothing wrong is the behaviour this product exists to be the opposite of. Failed scans are marked the same way, since a domain that would not load has not been assessed.
+
+The `finding_1..3` columns hold plain-English bullets ready to paste. They are deliberately bullets and not a drafted email: recipients pattern-match AI-written outreach and reply rates collapse when they do.
 
 Generate a sample report from the bundled fixtures, without touching any live site:
 
@@ -58,7 +72,12 @@ Findings are also deduplicated across pages: one rule failing on five pages is o
 | `src/platform.ts` | Detects Shopify / WooCommerce / Wix / Squarespace / BigCommerce / Webflow |
 | `src/fixes.ts` | Platform-specific remediation guidance |
 | `src/report.ts` | HTML and terminal report rendering |
-| `src/cli.ts` | Command-line entry point |
+| `src/robots.ts` | robots.txt fetching and RFC 9309 evaluation |
+| `src/safety.ts` | SSRF target guard and per-origin rate limiting |
+| `src/batch.ts` | Bounded-concurrency prospect scanning, CSV output |
+| `src/outreach.ts` | Turns findings into pasteable plain-English bullets |
+| `src/cli.ts` | Command-line entry point (`scan`, `batch`) |
+| `web/index.html` | Landing page. Scores 0 on this project's own scanner. |
 
 ### Scoring
 
@@ -69,21 +88,35 @@ Instance count scales sub-linearly on purpose: 200 missing alt attributes is wor
 ## Tests
 
 ```bash
-npm test         # 44 tests
+npm test         # 198 tests
 npm run typecheck
 ```
 
-Integration tests scan a bundled fixture site with deliberately planted violations, so results are deterministic and do not depend on a third party's deploy schedule.
+Integration tests scan a bundled fixture site with deliberately planted violations, so results are deterministic and do not depend on a third party's deploy schedule. No test reaches the public internet.
 
-Two test groups are load-bearing rather than incidental:
+Four test groups are load-bearing rather than incidental:
 
 - **Ranking invariants** — one critical barrier must outrank fifty best-practice ones; checkout must outweigh footer.
-- **Honesty constraints** — the report is parsed for affirmative compliance claims, with negation awareness so the tool's own disclaimers ("would *not* mean the site is accessible") do not trip it. If anyone ever adds "your site is now compliant" to a template, the build fails.
+- **Honesty constraints** — the report and every outreach bullet are parsed for affirmative compliance claims, with negation awareness so the tool's own disclaimers (“would *not* mean the site is accessible”) do not trip it. If anyone ever adds “your site is now compliant” to a template, the build fails.
+- **Risk-model integrity** — every mapped rule id must exist in axe-core, must be reachable under the scanner's tags, and every reachable rule must be mapped. An id that exists but is out of scope is exactly as dead as a typo, and the middle assertion is the one that catches it.
+- **Target safety** — the SSRF guard is tested against the usual bypasses, including IPv4-mapped and NAT64-wrapped addresses and redirect-based escapes.
+
+## Safety and etiquette
+
+The scanner reads other people's websites uninvited, so restraint is enforced in code rather than left to intention:
+
+- `robots.txt` is obeyed by default. A disallowed page is skipped **and named in the report** — a page silently omitted is indistinguishable from a page that came back clean.
+- Requests to the same origin are paced (1s floor, raised by `Crawl-delay`, capped so a directive aimed at bulk indexers cannot hang a scan).
+- Non-public targets — loopback, RFC1918, CGNAT, link-local, cloud metadata — are refused by default, and re-checked on redirect so a public host cannot 302 into internal space.
+- The scanner identifies itself honestly in its User-Agent.
+
+Both opt-outs (`--no-robots`, `--allow-private`) exist for scanning your own staging site, and the first prints a warning when used.
 
 ## Environment notes
 
 - Chromium resolution falls back to a system browser when the bundled Playwright revision is unavailable. Override with `CURBCUT_CHROMIUM_PATH`.
-- `HTTPS_PROXY` / `NO_PROXY` are honoured and passed through to the browser.
+- `HTTPS_PROXY` / `NO_PROXY` are honoured and passed through to both the browser and the robots.txt fetch.
+- `CURBCUT_ALLOW_PRIVATE_TARGETS=1` lifts the private-target guard. It is set automatically under test.
 
 ## Licence
 

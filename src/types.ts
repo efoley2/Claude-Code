@@ -122,6 +122,16 @@ export interface ScanReport {
     low: number;
     totalInstances: number;
   };
+  /**
+   * Scan-level notes about what could NOT be checked — pages robots.txt
+   * closed, pages that failed to load, a robots.txt we could not read.
+   *
+   * This is load-bearing rather than diagnostic. A page we skipped silently is
+   * indistinguishable, in the finished report, from a page that came back
+   * clean — which is the precise confusion this product exists to argue
+   * against. Anything that narrowed the scan has to reach the customer.
+   */
+  warnings: string[];
   /** Rules that ran and passed — evidence of what was actually checked. */
   passedRuleCount: number;
   /** Rules axe flagged as needing human review. */

@@ -1,9 +1,25 @@
 import { realpathSync, statSync } from 'node:fs';
 import { AxeBuilder } from '@axe-core/playwright';
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { classifyUrl, riskForRule, scoreFinding, stageWeight, exposureScore } from './risk.js';
 import { detectPlatform } from './platform.js';
 import { fixFor } from './fixes.js';
+import {
+  fetchRobots,
+  pathAllowed,
+  pathFromUrl,
+  unrestricted,
+  RobotsDisallowedError,
+  type RobotsFetcher,
+  type RobotsPolicy,
+} from './robots.js';
+import {
+  createTargetGuard,
+  defaultAllowPrivateTargets,
+  RequestPacer,
+  DEFAULT_MIN_DELAY_MS,
+  type TargetPolicy,
+} from './safety.js';
 import type {
   AggregatedFinding,
   Finding,
@@ -32,13 +48,35 @@ export interface ScanOptions {
   timeout: number;
   /** Emit progress to stderr. */
   verbose: boolean;
+  /** Obey robots.txt. Only turn this off for a site you own. */
+  respectRobots: boolean;
+  /** Minimum gap between requests to the same origin, before Crawl-delay. */
+  minRequestDelayMs: number;
+  /** Permit loopback and private-network targets. See safety.ts. */
+  allowPrivateTargets: boolean;
 }
 
 export const DEFAULT_OPTIONS: ScanOptions = {
   maxPages: 6,
   timeout: 30_000,
   verbose: true,
+  respectRobots: true,
+  minRequestDelayMs: DEFAULT_MIN_DELAY_MS,
+  allowPrivateTargets: defaultAllowPrivateTargets(),
 };
+
+/**
+ * A report plus the scan-level warnings behind it.
+ *
+ * Pages we skipped — because robots.txt closed them, or because they redirected
+ * somewhere we will not follow — have to reach the customer. Silently returning
+ * a smaller report would let someone believe a page was checked and clean when
+ * it was never looked at, which is the same failure mode as the compliance
+ * claims this product exists to argue against.
+ */
+export interface ScanResult extends ScanReport {
+  warnings: string[];
+}
 
 function log(opts: ScanOptions, message: string): void {
   if (opts.verbose) process.stderr.write(`${message}\n`);
@@ -89,7 +127,7 @@ function findSystemChromium(): string | undefined {
   return undefined;
 }
 
-async function launchBrowser(opts: ScanOptions): Promise<Browser> {
+export async function launchBrowser(opts: ScanOptions): Promise<Browser> {
   const proxy = proxyConfig();
   if (proxy) log(opts, `Routing browser traffic through ${proxy.server}`);
 
@@ -117,8 +155,17 @@ async function launchBrowser(opts: ScanOptions): Promise<Browser> {
  * path a plaintiff's tester would walk, which is where barriers carry the most
  * weight. We deliberately take one page per journey stage before taking a
  * second of anything.
+ *
+ * robots.txt is applied here rather than at scan time so a disallowed page does
+ * not consume one of the slots — the customer gets a full-size scan of what we
+ * are permitted to look at, plus a note naming what we were not.
  */
-async function discoverPages(page: Page, seedUrl: string, maxPages: number): Promise<string[]> {
+async function discoverPages(
+  page: Page,
+  seedUrl: string,
+  maxPages: number,
+  robots: RobotsPolicy,
+): Promise<{ targets: string[]; disallowed: string[] }> {
   const origin = new URL(seedUrl).origin;
 
   const links: string[] = await page
@@ -131,6 +178,7 @@ async function discoverPages(page: Page, seedUrl: string, maxPages: number): Pro
 
   const seen = new Set<string>([normalize(seedUrl)]);
   const byStage = new Map<JourneyStage, string[]>();
+  const disallowed = new Set<string>();
 
   for (const raw of links) {
     let url: URL;
@@ -147,6 +195,11 @@ async function discoverPages(page: Page, seedUrl: string, maxPages: number): Pro
     const key = normalize(url.href);
     if (seen.has(key)) continue;
     seen.add(key);
+
+    if (!pathAllowed(robots, pathFromUrl(url.href))) {
+      disallowed.add(pathFromUrl(url.href));
+      continue;
+    }
 
     const stage = classifyUrl(url.href);
     const bucket = byStage.get(stage) ?? [];
@@ -169,7 +222,7 @@ async function discoverPages(page: Page, seedUrl: string, maxPages: number): Pro
       picked.push(url);
     }
   }
-  return picked;
+  return { targets: picked, disallowed: [...disallowed] };
 }
 
 /** Strip the fragment and trailing slash so /shop and /shop/#x count as one page. */
@@ -183,9 +236,10 @@ function normalize(rawUrl: string): string {
   }
 }
 
-async function scanPage(page: Page, url: string, opts: ScanOptions): Promise<PageScan> {
+async function scanPage(page: Page, url: string, opts: ScanOptions, pacer: RequestPacer): Promise<PageScan> {
   const warnings: string[] = [];
 
+  await pacer.waitTurn(url);
   const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: opts.timeout });
   if (response && !response.ok()) {
     warnings.push(`Server returned HTTP ${response.status()}. Results may not reflect the real page.`);
@@ -289,9 +343,61 @@ function aggregate(pages: PageScan[], platform: Platform): AggregatedFinding[] {
   return findings.sort((a, b) => b.score - a.score);
 }
 
-export async function scanSite(siteUrl: string, options: Partial<ScanOptions> = {}): Promise<ScanReport> {
+/**
+ * Read robots.txt over the browser context's HTTP stack.
+ *
+ * Node's global fetch ignores HTTPS_PROXY, so a scan that works in the browser
+ * would fail to see robots.txt behind an egress proxy — and "we could not read
+ * it" must never be the reason we end up crawling more than we were allowed to.
+ * The context's request client inherits the same proxy and user agent.
+ */
+function robotsFetcherFor(context: BrowserContext): RobotsFetcher {
+  return async (url) => {
+    const response = await context.request.get(url, {
+      timeout: 10_000,
+      failOnStatusCode: false,
+      maxRedirects: 3,
+    });
+    return { status: response.status(), body: await response.text() };
+  };
+}
+
+/**
+ * Re-check every navigation, not just the seed.
+ *
+ * Vetting the URL we were handed is not enough on its own: a public host is
+ * free to answer with a 302 to `http://169.254.169.254/`, and the browser would
+ * follow it happily. Interception runs before the request leaves, so the
+ * internal hop is never made rather than merely never reported.
+ */
+async function guardNavigations(context: BrowserContext, policy: TargetPolicy, opts: ScanOptions): Promise<void> {
+  const guard = createTargetGuard(policy);
+
+  await context.route('**/*', async (route, request) => {
+    if (!request.isNavigationRequest()) {
+      await route.continue().catch(() => {});
+      return;
+    }
+    try {
+      await guard(request.url());
+      await route.continue();
+    } catch (err) {
+      log(opts, `  blocked: ${(err as Error).message}`);
+      await route.abort('blockedbyclient').catch(() => {});
+    }
+  });
+}
+
+export async function scanSite(siteUrl: string, options: Partial<ScanOptions> = {}): Promise<ScanResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const seed = siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`;
+  const targetPolicy: TargetPolicy = { allowPrivateTargets: opts.allowPrivateTargets };
+
+  // Refuse before spending a browser launch on it.
+  await createTargetGuard(targetPolicy)(seed);
+
+  const warnings: string[] = [];
+  const pacer = new RequestPacer(opts.minRequestDelayMs);
 
   const browser = await launchBrowser(opts);
   const context = await browser.newContext({
@@ -309,10 +415,33 @@ export async function scanSite(siteUrl: string, options: Partial<ScanOptions> = 
   let incompleteRuleCount = 0;
 
   try {
+    if (!opts.allowPrivateTargets) await guardNavigations(context, targetPolicy, opts);
+
+    const robots = opts.respectRobots
+      ? await fetchRobots(seed, robotsFetcherFor(context))
+      : unrestricted(seed);
+
+    if (robots.note) warnings.push(robots.note);
+    if (robots.status === 'ok') {
+      const group = robots.source === 'named' ? 'Curbcut' : '*';
+      log(opts, `robots.txt: applying the ${group} group (${robots.rules.length} rules)`);
+    }
+    if (robots.blanketDisallow) {
+      throw new RobotsDisallowedError(seed, 'the applicable group disallows the whole site');
+    }
+    if (!pathAllowed(robots, pathFromUrl(seed))) {
+      throw new RobotsDisallowedError(seed, `${pathFromUrl(seed)} is disallowed`);
+    }
+
+    pacer.honourCrawlDelay(new URL(seed).origin, robots.crawlDelaySeconds);
+    if (robots.crawlDelaySeconds) {
+      log(opts, `robots.txt asks for ${robots.crawlDelaySeconds}s between requests`);
+    }
+
     const page = await context.newPage();
 
     log(opts, `Scanning ${seed}`);
-    const seedScan = await scanPage(page, seed, opts);
+    const seedScan = await scanPage(page, seed, opts, pacer);
     pageScans.push(seedScan);
 
     platform = await detectPlatform(page);
@@ -324,13 +453,20 @@ export async function scanSite(siteUrl: string, options: Partial<ScanOptions> = 
     passedRuleCount = seedResults.passes.length;
     incompleteRuleCount = seedResults.incomplete.length;
 
-    const targets = await discoverPages(page, seed, opts.maxPages);
+    const { targets, disallowed } = await discoverPages(page, seed, opts.maxPages, robots);
+    for (const path of disallowed) {
+      warnings.push(`Not checked — robots.txt disallows ${path}.`);
+      log(opts, `Skipping ${path} (robots.txt)`);
+    }
+
     for (const url of targets) {
       log(opts, `Scanning ${url}`);
       try {
-        pageScans.push(await scanPage(page, url, opts));
+        pageScans.push(await scanPage(page, url, opts, pacer));
       } catch (err) {
-        log(opts, `  skipped: ${(err as Error).message}`);
+        const detail = (err as Error).message.split('\n')[0];
+        warnings.push(`Not checked — ${url} could not be loaded (${detail}).`);
+        log(opts, `  skipped: ${detail}`);
       }
     }
   } finally {
@@ -357,6 +493,7 @@ export async function scanSite(siteUrl: string, options: Partial<ScanOptions> = 
     summary,
     passedRuleCount,
     incompleteRuleCount,
+    warnings,
   };
 }
 

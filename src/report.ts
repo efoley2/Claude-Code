@@ -209,6 +209,10 @@ export function renderHtmlReport(report: ScanReport): string {
     border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 2rem;
   }
   .limits h2 { margin: 0 0 .6rem; font-size: .8rem; }
+  /* Distinguished from the coverage limits: that block is always true, this
+     one names what specifically went unchecked on this run. */
+  .not-checked { background: var(--surface); border-color: var(--border); border-left: 4px solid var(--high); }
+  .not-checked-lead { margin: 0 0 .6rem; font-size: .92rem; }
   .limits ul { margin: 0; padding-left: 1.15rem; }
   .limits li { margin-bottom: .5rem; font-size: .92rem; }
   .limits li:last-child { margin-bottom: 0; }
@@ -315,6 +319,16 @@ export function renderHtmlReport(report: ScanReport): string {
       } scanned</strong>, chosen to cover the purchase path. Pages behind login, and states that require interaction to reach (open modals, expanded menus, validation errors), were not tested.</li>
     </ul>
   </div>
+
+  ${
+    report.warnings.length
+      ? `<div class="limits not-checked">
+           <h2>What could not be checked</h2>
+           <p class="not-checked-lead">These pages were not scanned, so nothing below reflects them. A page that was skipped is not a page that came back clean.</p>
+           <ul>${report.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>
+         </div>`
+      : ''
+  }
 
   <div class="stats">
     <div class="stat"><b>${report.summary.critical}</b> most-cited</div>
